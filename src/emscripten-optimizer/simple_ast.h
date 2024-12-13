@@ -310,7 +310,7 @@ struct Value {
   }
 
   char* parse(char* curr) {
-  /* space, tab, linefeed/newline, or return */
+    /* space, tab, linefeed/newline, or return */
 #define is_json_space(x) (x == 32 || x == 9 || x == 10 || x == 13)
 #define skip()                                                                 \
   {                                                                            \
@@ -850,6 +850,16 @@ struct JSPrinter {
     }
   }
 
+  void printSetHEAP() {
+    emit("unsigned char HEAP8[__heap_end];");
+    newline();
+    emit("int *HEAP32 = (int *) HEAP8;");
+    newline();
+    newline();
+    emit("initActiveSegments(HEAP8);");
+    newline();
+  }
+
   void printToplevel(Ref node) {
     if (node[1]->size() > 0) {
       printStats(node[1]);
@@ -871,14 +881,27 @@ struct JSPrinter {
   }
 
   void printDefun(Ref node) {
-    emit("function ");
+    // emit("function ");
+
+    // print type
+    auto type = node[4];
+    emit(type->getCString());
+    space();
+
     emit(node[1]->getCString());
     emit('(');
     Ref args = node[2];
+    Ref argTypes = node[5];
     for (size_t i = 0; i < args->size(); i++) {
       if (i > 0) {
         (pretty ? emit(", ") : emit(','));
       }
+
+      // emit type
+      auto argType = argTypes[i];
+      emit(argType->getCString());
+      space();
+
       emit(args[i]->getCString());
     }
     emit(')');
@@ -890,6 +913,13 @@ struct JSPrinter {
     emit('{');
     indent++;
     newline();
+
+    // Load the heap into memory
+    // Check if the function is accesing the HEAP
+    if (node[3]->size() > 0) {
+      printSetHEAP();
+    }
+
     printStats(node[3]);
     indent--;
     newline();
@@ -1166,9 +1196,20 @@ struct JSPrinter {
   }
 
   void printBinary(Ref node) {
+    auto str = std::string(node[1]->getCString());
+
+    if (str == ">>") {
+      emit('(');
+    }
     printChild(node[2], node, -1);
+
+    if (str == ">>") {
+      emit(')');
+    }
+
     space();
-    emit(node[1]->getCString());
+    emit(str.c_str());
+    // emit(node[1]->getCString());
     space();
     printChild(node[3], node, 1);
   }
@@ -1310,7 +1351,11 @@ struct JSPrinter {
   }
 
   void printVar(Ref node) {
-    emit("var ");
+    // emit("var ");
+    Ref type = node[2];
+    emit(type->getCString());
+    emit(' ');
+
     Ref args = node[1];
     for (size_t i = 0; i < args->size(); i++) {
       if (i > 0) {
@@ -1401,6 +1446,11 @@ struct JSPrinter {
     emit(':');
     space();
     print(node[2]);
+
+    // exit label
+    newline();
+    emit(node[1]->getCString());
+    emit("_exit:");
   }
 
   void printReturn(Ref node) {
@@ -1412,9 +1462,15 @@ struct JSPrinter {
   }
 
   void printBreak(Ref node) {
-    emit("break");
+    // emit as goto to the exit label
+    // emit("break");
+
+    emit("goto ");
+    emit(node[1]->getCString());
+    emit("_exit;");
+
     if (!!node[1]) {
-      emit(' ');
+      emit(" // ");
       emit(node[1]->getCString());
     }
   }
@@ -1422,7 +1478,7 @@ struct JSPrinter {
   void printContinue(Ref node) {
     emit("continue");
     if (!!node[1]) {
-      emit(' ');
+      emit("; // ");
       emit(node[1]->getCString());
     }
   }
@@ -1648,32 +1704,41 @@ public:
               .push_back(right);
   }
 
-  static Ref makeFunction(IString name) {
-    return &makeRawArray(4)
+  static Ref makeFunction(IString type, IString name) {
+    return &makeRawArray(6)
               ->push_back(makeRawString(DEFUN))
               .push_back(makeRawString(name))
               .push_back(makeRawArray())
-              .push_back(makeRawArray());
+              .push_back(makeRawArray())
+              .push_back(makeRawString(type)) // Function Type
+              .push_back(makeRawArray());     // Argument Types
   }
 
-  static void appendArgumentToFunction(Ref func, IString arg) {
+  static void appendArgumentToFunction(Ref func, IString arg, IString type) {
     assert(func[0] == DEFUN);
     func[2]->push_back(makeRawString(arg));
+
+    // Append Argument Type
+    func[5]->push_back(makeRawString(type));
   }
 
   static Ref makeVar(bool is_const = false) {
-    return &makeRawArray(2)
+    return &makeRawArray(3)
               ->push_back(makeRawString(VAR))
-              .push_back(makeRawArray());
+              .push_back(makeRawArray())
+              .push_back(makeRawString(VAR));
   }
 
-  static void appendToVar(Ref var, IString name, Ref value) {
+  static void appendToVar(Ref var, IString name, Ref value, IString type) {
     assert(var[0] == VAR);
     Ref array = &makeRawArray(1)->push_back(makeRawString(name));
     if (!!value) {
       array->push_back(value);
     }
     var[1]->push_back(array);
+
+    // Append Type
+    var[2]->setString(type);
   }
 
   static Ref makeReturn(Ref value) {

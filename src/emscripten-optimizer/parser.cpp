@@ -21,6 +21,7 @@
 namespace cashew {
 
 // common strings
+IString GLOBAL("GLOBAL");
 
 IString TOPLEVEL("toplevel");
 IString DEFUN("defun");
@@ -77,7 +78,7 @@ IString MOD("%");
 IString MUL("*");
 IString RSHIFT(">>");
 IString LSHIFT("<<");
-IString TRSHIFT(">>>");
+IString TRSHIFT(">>"); // Changed from >>>
 IString HEAP8("HEAP8");
 IString HEAP16("HEAP16");
 IString HEAP32("HEAP32");

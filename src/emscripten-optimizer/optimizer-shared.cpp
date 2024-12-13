@@ -108,7 +108,9 @@ bool needsJsCoercion(JsType type) {
 Ref makeJsCoercion(Ref node, JsType type) {
   switch (type) {
     case JS_INT:
-      return ValueBuilder::makeBinary(node, OR, ValueBuilder::makeNum(0));
+      // Directly emit the node as we generate C code now
+      return node;
+      // return ValueBuilder::makeBinary(node, OR, ValueBuilder::makeNum(0));
     case JS_DOUBLE:
       return ValueBuilder::makeUnary(PLUS, node);
     case JS_FLOAT:

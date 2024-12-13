@@ -126,8 +126,7 @@ static void traversePrePost(Ref node,
 }
 
 static void traversePost(Ref node, std::function<void(Ref)> visit) {
-  traversePrePost(
-    node, [](Ref node) {}, visit);
+  traversePrePost(node, [](Ref node) {}, visit);
 }
 
 static void replaceInPlace(Ref target, Ref value) {
@@ -537,7 +536,7 @@ static void emitWasm(Module& wasm,
   Wasm2JSGlue glue(wasm, output, flags, name);
   glue.emitPre();
   printJS(js, output);
-  glue.emitPost();
+  // glue.emitPost();
 }
 
 class AssertionEmitter {
@@ -674,7 +673,8 @@ Ref AssertionEmitter::emitAssertTrapFunc(InvokeAction& invoke,
                                expr));
   Ref innerFunc = processFunction(exprFunc.get());
   fixCalls(innerFunc, asmModule);
-  Ref outerFunc = ValueBuilder::makeFunction(testFuncName);
+
+  Ref outerFunc = ValueBuilder::makeFunction("UNKNOWN_Ty", testFuncName);
   outerFunc[3]->push_back(innerFunc);
   Ref tryBlock = ValueBuilder::makeBlock();
   ValueBuilder::appendToBlock(tryBlock, ValueBuilder::makeCall(innerFuncName));

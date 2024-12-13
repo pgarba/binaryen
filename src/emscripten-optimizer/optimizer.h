@@ -43,6 +43,20 @@ enum JsType {
   JS_NONE // number of types
 };
 
+enum CType {
+  CTYPE_INT = 0,
+  CTYPE_DOUBLE,
+  CTYPE_FLOAT,
+  CTYPE_FLOAT32X4,
+  CTYPE_FLOAT64X2,
+  CTYPE_INT8X16,
+  CTYPE_INT16X8,
+  CTYPE_INT32X4,
+  CTYPE_INT64,
+  CTYPE_REF,
+  CTYPE_NONE // number of types
+};
+
 enum JsSign {
   // small constants can be signed or unsigned, variables are also flexible
   JS_FLEXIBLE = 0,
