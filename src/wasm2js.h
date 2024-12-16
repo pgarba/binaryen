@@ -596,7 +596,7 @@ Ref Wasm2JSBuilder::processWasm(Module* wasm, Name funcName) {
 
   // addTable(ret[1], wasm);
   addStart(ret[1], wasm);
-  addExports(ret[1], wasm);
+  // addExports(ret[1], wasm);
   return ret;
 }
 

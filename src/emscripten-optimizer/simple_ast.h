@@ -851,7 +851,8 @@ struct JSPrinter {
   }
 
   void printSetHEAP() {
-    emit("unsigned char HEAP8[__heap_end];");
+    // Init with 0 otherwise it can lead to wrong results because of mutation
+    emit("unsigned char HEAP8[__heap_end] = {0};");
     newline();
     emit("unsigned char *HEAPU8 = (unsigned char *) HEAP8;");
     newline();
