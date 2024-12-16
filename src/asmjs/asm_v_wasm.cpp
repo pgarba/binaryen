@@ -70,7 +70,7 @@ CType wasmToCType(Type type) {
   WASM_UNREACHABLE("invalid type");
 }
 
-IString getCType(CType type, bool isStatic, bool isConstant) {
+IString getCType(CType type, bool isStatic, bool isConstant, bool isExtern) {
   std::string ret;
 
   switch (type) {
@@ -112,12 +112,16 @@ IString getCType(CType type, bool isStatic, bool isConstant) {
       break;
   }
 
-  if (isConstant) {
-    ret = "const " + ret;
+  if (isExtern) {
+    ret = "extern " + ret;
   }
 
   if (isStatic) {
     ret = "static " + ret;
+  }
+
+  if (isConstant) {
+    ret = "const " + ret;
   }
 
   return IString(ret);

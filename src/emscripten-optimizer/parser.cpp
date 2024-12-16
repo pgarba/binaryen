@@ -25,6 +25,7 @@ IString GLOBAL("GLOBAL");
 
 IString TOPLEVEL("toplevel");
 IString DEFUN("defun");
+IString DECLARATION("declaration");
 IString BLOCK("block");
 IString VAR("var");
 IString CONST("const");

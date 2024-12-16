@@ -324,8 +324,12 @@ private:
   // Map of globals
   std::unordered_map<IString, Ref> globals;
 
+  // Map of imported functions
+  std::unordered_map<IString, Ref> importedFunctions;
+
   void ensureModuleVar(Ref ast, const Importable& imp);
   Ref getImportName(const Importable& imp);
+  std::string getImportNameString(const Importable& imp);
   void addBasics(Ref ast, Module* wasm);
   void addFunctionImport(Ref ast, Function* import);
   void addGlobalImport(Ref ast, Global* import);
@@ -335,6 +339,7 @@ private:
   void addGlobal(Ref ast, Global* global, Module* module);
   void addMemoryFuncs(Ref ast, Module* wasm);
   void addMemoryGrowFunc(Ref ast, Module* wasm);
+  void addFunctionDeclarations(Ref ast, Module* wasm, bool imported);
 
   Wasm2JSBuilder() = delete;
   Wasm2JSBuilder(const Wasm2JSBuilder&) = delete;
@@ -358,7 +363,7 @@ Ref Wasm2JSBuilder::processWasm(Module* wasm, Name funcName) {
 
   // Ensure the scratch memory helpers.
   // If later on they aren't needed, we'll clean them up.
-  ABI::wasm2js::ensureHelpers(wasm);
+  // ABI::wasm2js::ensureHelpers(wasm);
 
   // Process the code, and optimize if relevant.
   // First, do the lowering to a JS-friendly subset.
@@ -508,13 +513,18 @@ Ref Wasm2JSBuilder::processWasm(Module* wasm, Name funcName) {
 
   // create heaps, etc
   // Patch: Remove the basics
-  /*
-  addBasics(ret[1], wasm);
+
+  // Dont add the basics for now
+  // addBasics(ret[1], wasm);
+
+  // declare all functions for imported functions
+  addFunctionDeclarations(ret[1], wasm, true);
+
   ModuleUtils::iterImportedFunctions(
     *wasm, [&](Function* import) { addFunctionImport(ret[1], import); });
+
   ModuleUtils::iterImportedGlobals(
     *wasm, [&](Global* import) { addGlobalImport(ret[1], import); });
-  */
 
   // Note the names of functions. We need to do this here as when generating
   // mangled local names we need them not to conflict with these (see fromName)
@@ -532,16 +542,24 @@ Ref Wasm2JSBuilder::processWasm(Module* wasm, Name funcName) {
     }
   });
 
+  // declare all functions for not imported functions
+  addFunctionDeclarations(ret[1], wasm, false);
+
   // add exports here
   addExports(ret[1], wasm);
+
+  // add tables
+  addTable(ret[1], wasm);
 
   if (flags.emscripten) {
     ret[1]->push_back(ValueBuilder::makeName("// EMSCRIPTEN_START_FUNCS\n"));
   }
+
   // functions
   ModuleUtils::iterDefinedFunctions(*wasm, [&](Function* func) {
     ret[1]->push_back(processFunction(wasm, func));
   });
+
   if (generateFetchHighBits) {
     Builder builder(*wasm);
     ret[1]->push_back(
@@ -577,8 +595,8 @@ Ref Wasm2JSBuilder::processWasm(Module* wasm, Name funcName) {
   */
 
   // addTable(ret[1], wasm);
-  // addStart(ret[1], wasm);
-  // addExports(ret[1], wasm);
+  addStart(ret[1], wasm);
+  addExports(ret[1], wasm);
   return ret;
 }
 
@@ -662,31 +680,68 @@ Ref Wasm2JSBuilder::getImportName(const Importable& imp) {
   }
 }
 
+std::string Wasm2JSBuilder::getImportNameString(const Importable& imp) {
+  auto modName = fromName(imp.module, NameScope::Top);
+  auto baseName = fromName(imp.base, NameScope::Top);
+
+  std::string importName =
+    std::string(modName.str) + "__" + std::string(baseName.str);
+
+  return importName;
+}
+
 void Wasm2JSBuilder::addFunctionImport(Ref ast, Function* import) {
   // The scratch memory helpers are emitted in the glue, see code and comments
   // below.
   if (ABI::wasm2js::isHelper(import->base)) {
     return;
   }
-  ensureModuleVar(ast, *import);
+
+  // Disable for now as might not need it in C++ code
+  // ensureModuleVar(ast, *import);
+
+  std::string importName = getImportNameString(*import);
+
   Ref theVar = ValueBuilder::makeVar();
   ast->push_back(theVar);
   ValueBuilder::appendToVar(theVar,
                             fromName(import->name, NameScope::Top),
-                            getImportName(*import),
-                            "IMPORT");
+                            // getImportName(*import),
+                            ValueBuilder::makeName(IString(importName)),
+                            "auto");
 }
 
 void Wasm2JSBuilder::addGlobalImport(Ref ast, Global* import) {
-  ensureModuleVar(ast, *import);
+  // Disable for now as might not need it in C++ code
+  // ensureModuleVar(ast, *import);
+
+  auto Type = getCType(wasmToCType(import->type), false, false, true);
+
+  // emit extern C code for the global
+  Ref refGlobal = ValueBuilder::makeName(Type.toString() + " " +
+                                         getImportNameString(*import) + ";\n");
+
+  ast->push_back(refGlobal);
+
   Ref theVar = ValueBuilder::makeVar();
   ast->push_back(theVar);
   Ref value = getImportName(*import);
   if (import->type == Type::i32) {
     value = makeJsCoercion(value, JS_INT);
   }
-  ValueBuilder::appendToVar(
-    theVar, fromName(import->name, NameScope::Top), value, "GLOBAL_IMPORT");
+
+  auto globalName = getImportNameString(*import);
+  auto globalNameRef = ValueBuilder::makeName(globalName);
+
+  // Assume const unless proven otherwise
+  ValueBuilder::appendToVar(theVar,
+                            fromName(import->name, NameScope::Top),
+                            // value,
+                            globalNameRef,
+                            getCType(wasmToCType(import->type), true, true));
+
+  // Add to the global map
+  globals[import->name] = theVar;
 }
 
 void Wasm2JSBuilder::addTable(Ref ast, Module* wasm) {
@@ -748,6 +803,10 @@ void Wasm2JSBuilder::addTable(Ref ast, Module* wasm) {
 
     if (perElementInit) {
       // TODO: optimize for size
+      ast->push_back(ValueBuilder::makeName(
+        "static std::map<int, void *> FUNCTION_TABLE;\n"));
+      ast->push_back(ValueBuilder::makeName("void InitTable() {\n"));
+
       ModuleUtils::iterTableSegments(
         *wasm, table->name, [&](ElementSegment* segment) {
           auto offset = segment->offset;
@@ -765,14 +824,20 @@ void Wasm2JSBuilder::addTable(Ref ast, Module* wasm) {
               } else {
                 WASM_UNREACHABLE("unexpected expr type");
               }
+
+              std::string name =
+                "(void *) " + fromName(entry, NameScope::Top).toString();
+
               ast->push_back(
                 ValueBuilder::makeStatement(ValueBuilder::makeBinary(
                   ValueBuilder::makeSub(ValueBuilder::makeName(FUNCTION_TABLE),
                                         index),
                   SET,
-                  ValueBuilder::makeName(fromName(entry, NameScope::Top)))));
+                  ValueBuilder::makeName(name))));
             });
         });
+
+      ast->push_back(ValueBuilder::makeName("};\n"));
     }
   }
 }
@@ -949,8 +1014,8 @@ Ref Wasm2JSBuilder::processFunction(Module* m,
   // Get Type
   auto Type = getCType(wasmToCType(func->getSig().results));
 
-  Ref ret =
-    ValueBuilder::makeFunction(Type, fromName(func->name, NameScope::Top));
+  Ref ret = ValueBuilder::makeFunction(
+    Type, fromName(func->name, NameScope::Top), false);
   // arguments
   bool needCoercions = options.optimizeLevel == 0 || standaloneFunction ||
                        functionsCallableFromOutside.count(func->name);
@@ -1454,6 +1519,18 @@ Ref Wasm2JSBuilder::processExpression(Expression* curr,
         }
         return ret;
       } else {
+        // Create a cast of the called function
+        Ref ret;
+
+        /*
+        // Todo: Make indirected calls work!
+        auto VarFCast = ValueBuilder::makeVar();
+        VarFCast[1]->push_back(ValueBuilder::makeBinary(
+          ValueBuilder::makeName(FUNCTION_TABLE), SET, target));
+
+        sequenceAppend(ret, VarFCast);
+        */
+
         // Target has no side effects, emit simple code
         Ref theCall = ValueBuilder::makeCall(ValueBuilder::makeSub(
           ValueBuilder::makeName(FUNCTION_TABLE), target));
@@ -1461,6 +1538,9 @@ Ref Wasm2JSBuilder::processExpression(Expression* curr,
           theCall[2]->push_back(visit(operand, EXPRESSION_RESULT));
         }
         theCall = makeJsCoercion(theCall, wasmToJsType(curr->type));
+
+        sequenceAppend(ret, theCall);
+
         return theCall;
       }
     }
@@ -2542,7 +2622,7 @@ Ref Wasm2JSBuilder::processExpression(Expression* curr,
 
 void Wasm2JSBuilder::addMemoryFuncs(Ref ast, Module* wasm) {
   Ref memorySizeFunc =
-    ValueBuilder::makeFunction("UNKNOWN_Ty", WASM_MEMORY_SIZE);
+    ValueBuilder::makeFunction("UNKNOWN_Ty", WASM_MEMORY_SIZE, false);
   memorySizeFunc[3]->push_back(ValueBuilder::makeReturn(
     makeJsCoercion(ValueBuilder::makeBinary(
                      ValueBuilder::makeDot(ValueBuilder::makeName(BUFFER),
@@ -2560,7 +2640,7 @@ void Wasm2JSBuilder::addMemoryFuncs(Ref ast, Module* wasm) {
 
 void Wasm2JSBuilder::addMemoryGrowFunc(Ref ast, Module* wasm) {
   Ref memoryGrowFunc =
-    ValueBuilder::makeFunction("UNKNOWN_Ty", WASM_MEMORY_GROW);
+    ValueBuilder::makeFunction("UNKNOWN_Ty", WASM_MEMORY_GROW, false);
   ValueBuilder::appendArgumentToFunction(
     memoryGrowFunc, IString("pagesToAdd"), IString("UNKNOWN_Ty"));
 
@@ -2683,6 +2763,48 @@ void Wasm2JSBuilder::addMemoryGrowFunc(Ref ast, Module* wasm) {
   ast->push_back(memoryGrowFunc);
 }
 
+void Wasm2JSBuilder::addFunctionDeclarations(Ref ast,
+                                             Module* wasm,
+                                             bool imported) {
+  for (auto& func : wasm->functions) {
+    // if (func->imported()) {
+    //   continue;
+    // }
+
+    if (imported && !func->imported()) {
+      continue;
+    }
+
+    if (!imported && func->imported()) {
+      continue;
+    }
+
+    Ref ret;
+    if (func->imported()) {
+      auto Type =
+        getCType(wasmToCType(func->getSig().results), false, false, true);
+
+      auto importName = getImportNameString(*func);
+
+      ret = ValueBuilder::makeFunction(Type, IString(importName), true);
+    } else {
+      auto Type = getCType(wasmToCType(func->getSig().results));
+      ret = ValueBuilder::makeFunction(
+        Type, fromName(func->name, NameScope::Top), true);
+    }
+
+    // arguments
+    for (Index i = 0; i < func->getNumParams(); i++) {
+      auto Type = getCType(wasmToCType(func->getLocalType(i)));
+
+      IString name = fromName(func->getLocalNameOrGeneric(i), NameScope::Local);
+      ValueBuilder::appendArgumentToFunction(ret, name, Type);
+    }
+
+    ast->push_back(ret);
+  }
+}
+
 // Wasm2JSBuilder emits the core of the module - the functions etc. that
 // would be the asm.js function in an asm.js world. This class emits the
 // rest of the "glue" around that.
@@ -2720,16 +2842,21 @@ void Wasm2JSGlue::emitIncludes() {
   out << '\n';
   out << "#include <string.h>\n";
   out << "#include <stdint.h>\n\n";
+  out << "#include <functional>\n\n";
+  out << "#include <map>\n\n";
 }
 
 void Wasm2JSGlue::emitPre() {
+  // emit needed C includes
   emitIncludes();
 
+  /*
   if (flags.emscripten) {
     emitPreEmscripten();
   } else {
     emitPreES6();
   }
+  */
 
   if (isTableExported(wasm)) {
     out << "function Table(ret) {\n";
@@ -2979,7 +3106,14 @@ void Wasm2JSGlue::emitMemory() {
         if (j > 0) {
           out << ",";
         }
-        out << (int)seg->data[j];
+
+        char HexChar[5] = {0};
+        sprintf(HexChar, "%02hhx", (char)seg->data[j]);
+
+        // Print as hex number
+        out << "0x" << HexChar;
+
+        // out << (char)seg->data[j];
       }
       out << "}; // Offset: " << offset << "\n";
     }

@@ -25,7 +25,10 @@ namespace wasm {
 JsType wasmToJsType(Type type);
 CType wasmToCType(Type type);
 
-IString getCType(CType type, bool isStatic = false, bool isConstant = false);
+IString getCType(CType type,
+                 bool isStatic = false,
+                 bool isConstant = false,
+                 bool isExtern = false);
 
 char getSig(Type type);
 std::string getSig(Type results, Type params);

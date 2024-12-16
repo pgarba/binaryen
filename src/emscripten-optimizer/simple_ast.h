@@ -853,6 +853,12 @@ struct JSPrinter {
   void printSetHEAP() {
     emit("unsigned char HEAP8[__heap_end];");
     newline();
+    emit("unsigned char *HEAPU8 = (unsigned char *) HEAP8;");
+    newline();
+    emit("unsigned short *HEAP16 = (unsigned short *) HEAP8;");
+    newline();
+    emit("unsigned short *HEAPU16 = (unsigned short *) HEAP8;");
+    newline();
     emit("int *HEAP32 = (int *) HEAP8;");
     newline();
     newline();
@@ -871,13 +877,13 @@ struct JSPrinter {
       emit("{}");
       return;
     }
-    emit('{');
+    // emit('{');
     indent++;
     newline();
     printStats(node[1]);
     indent--;
     newline();
-    emit('}');
+    // emit('}');
   }
 
   void printDefun(Ref node) {
@@ -906,10 +912,18 @@ struct JSPrinter {
     }
     emit(')');
     space();
+
+    // Check if declaration
+    if (node[6]->getIString() == DECLARATION) {
+      emit(';');
+      return;
+    }
+
     if (node->size() == 3 || node[3]->size() == 0) {
       emit("{}");
       return;
     }
+
     emit('{');
     indent++;
     newline();
@@ -1089,7 +1103,9 @@ struct JSPrinter {
     //         strlen(storage_e) < strlen(storage_f));
     char* ret;
     if (err_e == err_f) {
-      ret = strlen(storage_e) < strlen(storage_f) ? storage_e : storage_f;
+      // Always take int
+      // ret = strlen(storage_e) < strlen(storage_f) ? storage_e : storage_f;
+      ret = storage_e;
     } else {
       ret = err_e < err_f ? storage_e : storage_f;
     }
@@ -1097,6 +1113,7 @@ struct JSPrinter {
       ret--; // safe to go back one, there is one more char in full_*
       *ret = '-';
     }
+
     return ret;
   }
 
@@ -1198,20 +1215,31 @@ struct JSPrinter {
   void printBinary(Ref node) {
     auto str = std::string(node[1]->getCString());
 
-    if (str == ">>") {
-      emit('(');
+    bool emitBrackets = false;
+    if (str == ">>" || str == "<<" || str == "==" || str == "&" || str == "|") {
+      emitBrackets = true;
     }
+
+    if (emitBrackets)
+      emit('(');
+
     printChild(node[2], node, -1);
 
-    if (str == ">>") {
+    if (emitBrackets)
       emit(')');
-    }
 
     space();
     emit(str.c_str());
     // emit(node[1]->getCString());
     space();
+
+    if (emitBrackets)
+      emit('(');
+
     printChild(node[3], node, 1);
+
+    if (emitBrackets)
+      emit(')');
   }
 
   void printUnaryPrefix(Ref node) {
@@ -1375,6 +1403,10 @@ struct JSPrinter {
     return node->isArray() && !node->empty() && node[0] == BLOCK;
   }
 
+  static bool isReturn(Ref node) {
+    return node->isArray() && !node->empty() && node[0] == RETURN;
+  }
+
   static bool ifHasElse(Ref node) {
     assert(node->isArray() && node[0] == IF);
     return node->size() >= 4 && !!node[3];
@@ -1388,12 +1420,21 @@ struct JSPrinter {
     emit(')');
     space();
     bool emitsBracesAnyhow = isBlock(node[2]);
+    emitsBracesAnyhow = !true;
     if (!emitsBracesAnyhow) {
       emit('{');
       indent++;
       newline();
     }
+
+    // Emit the block
     print(node[2]);
+
+    // Check if we need to terminate with a semicolon
+    if (buffer[used - 1] != '}' && buffer[used - 1] != ';') {
+      emit(';');
+    }
+
     if (!emitsBracesAnyhow) {
       indent--;
       newline();
@@ -1404,12 +1445,19 @@ struct JSPrinter {
       emit("else");
       safeSpace();
       bool emitsBracesAnyhow = isBlock(node[3]);
+      emitsBracesAnyhow = !true;
       if (!emitsBracesAnyhow) {
         emit('{');
         indent++;
         newline();
       }
       print(node[3]);
+
+      // Check if we need to terminate with a semicolon
+      if (buffer[used - 1] != '}' && buffer[used - 1] != ';') {
+        emit(';');
+      }
+
       if (!emitsBracesAnyhow) {
         indent--;
         newline();
@@ -1437,7 +1485,10 @@ struct JSPrinter {
     print(node[1]);
     emit(')');
     space();
-    print(node[2], "{}");
+    emit('{');
+    // print(node[2], "{}");
+    print(node[2]);
+    emit('}');
   }
 
   void printLabel(Ref node) {
@@ -1473,6 +1524,8 @@ struct JSPrinter {
       emit(" // ");
       emit(node[1]->getCString());
     }
+
+    emit(";\n");
   }
 
   void printContinue(Ref node) {
@@ -1704,14 +1757,16 @@ public:
               .push_back(right);
   }
 
-  static Ref makeFunction(IString type, IString name) {
-    return &makeRawArray(6)
+  static Ref makeFunction(IString type, IString name, bool declaration) {
+    auto DECLStr = declaration ? DECLARATION : "";
+    return &makeRawArray(7)
               ->push_back(makeRawString(DEFUN))
               .push_back(makeRawString(name))
               .push_back(makeRawArray())
               .push_back(makeRawArray())
-              .push_back(makeRawString(type)) // Function Type
-              .push_back(makeRawArray());     // Argument Types
+              .push_back(makeRawString(type))     // Function Type
+              .push_back(makeRawArray())          // Argument Types
+              .push_back(makeRawString(DECLStr)); // IsDeclaration
   }
 
   static void appendArgumentToFunction(Ref func, IString arg, IString type) {

@@ -674,7 +674,7 @@ Ref AssertionEmitter::emitAssertTrapFunc(InvokeAction& invoke,
   Ref innerFunc = processFunction(exprFunc.get());
   fixCalls(innerFunc, asmModule);
 
-  Ref outerFunc = ValueBuilder::makeFunction("UNKNOWN_Ty", testFuncName);
+  Ref outerFunc = ValueBuilder::makeFunction("UNKNOWN_Ty", testFuncName, false);
   outerFunc[3]->push_back(innerFunc);
   Ref tryBlock = ValueBuilder::makeBlock();
   ValueBuilder::appendToBlock(tryBlock, ValueBuilder::makeCall(innerFuncName));

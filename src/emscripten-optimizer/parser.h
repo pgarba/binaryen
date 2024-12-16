@@ -74,6 +74,7 @@ public:
 
 extern IString TOPLEVEL;
 extern IString DEFUN;
+extern IString DECLARATION;
 extern IString BLOCK;
 extern IString VAR;
 extern IString CONST;
