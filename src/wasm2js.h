@@ -788,11 +788,13 @@ void Wasm2JSBuilder::addTable(Ref ast, Module* wasm) {
         Fatal() << "wasm2js doesn't support a table that is both imported and "
                    "exported\n";
       }
+      /*
       Ref theVar = ValueBuilder::makeVar();
       ast->push_back(theVar);
 
       Ref table = ValueBuilder::makeCall(IString("Table"), theArray);
       ValueBuilder::appendToVar(theVar, FUNCTION_TABLE, table, "TABLE");
+      */
     } else if (!table->imported()) {
       // Otherwise if the table is internal (neither imported not exported).
       // Just use a plain array in this case, avoiding the Table.
@@ -2858,6 +2860,7 @@ void Wasm2JSGlue::emitPre() {
   }
   */
 
+  /*
   if (isTableExported(wasm)) {
     out << "function Table(ret) {\n";
     if (wasm.tables[0]->initial == wasm.tables[0]->max) {
@@ -2878,6 +2881,7 @@ void Wasm2JSGlue::emitPre() {
         << "  return ret;\n"
         << "}\n\n";
   }
+  */
 
   emitMemory();
   emitSpecialSupport();
